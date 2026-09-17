@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  xfce4-power-manager's stock defaults blank the display after ~10 minutes and
+  switch it off after ~15. Idle only ends on input, and the normal
+  configuration for this board is no keyboard and no mouse attached - so once
+  the only output goes dark nothing can ever wake it and the machine looks
+  dead. labwc implements wlr-output-power-management, so the blanking really
+  does take effect.
+
+  Zero every timeout and disable DPMS outright. A board with no input devices
+  should never turn its screen off.
+-->
+<channel name="xfce4-power-manager" version="1.0">
+  <property name="xfce4-power-manager" type="empty">
+    <property name="dpms-enabled" type="bool" value="false"/>
+    <property name="dpms-on-ac-sleep" type="uint" value="0"/>
+    <property name="dpms-on-ac-off" type="uint" value="0"/>
+    <property name="dpms-on-battery-sleep" type="uint" value="0"/>
+    <property name="dpms-on-battery-off" type="uint" value="0"/>
+    <property name="blank-on-ac" type="int" value="0"/>
+    <property name="blank-on-battery" type="int" value="0"/>
+    <property name="inactivity-on-ac" type="uint" value="0"/>
+    <property name="inactivity-on-battery" type="uint" value="0"/>
+    <property name="lock-screen-suspend-hibernate" type="bool" value="false"/>
+  </property>
+</channel>

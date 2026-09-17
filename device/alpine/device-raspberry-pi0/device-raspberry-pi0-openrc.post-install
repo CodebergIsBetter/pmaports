@@ -1,0 +1,118 @@
+#!/bin/sh
+# alpine-baselayout ships empty /etc/runlevels directories: on a normal Alpine
+# installation they are populated by setup-alpine / setup-disk, and on
+# postmarketOS by postmarketos-base. This device is installed with
+# deviceinfo_alpine_only, so neither of those runs and the device package has
+# to do it. The set below is Alpine's standard one (see
+# aports/scripts/genapkovl-*.sh) plus what a disk installation needs.
+
+add() {
+	rc-update add "$1" "$2" 2>/dev/null || true
+}
+
+# Use eudev instead of the busybox mdev that alpine-base pulls in: this device
+# ships udev rules, and Mesa/libinput want a real udev. Same as "setup-devd udev".
+rc-update del mdev sysinit 2>/dev/null
+rc-update del hwdrivers sysinit 2>/dev/null
+add udev sysinit
+add udev-trigger sysinit
+add udev-settle sysinit
+
+# seatd lets a Wayland compositor use the DRM device and input without
+# logind; xdg-runtime-dirs creates /run/user/<uid>, which is elogind's job
+# on a normal desktop. Both are needed by every Wayland UI, not just sway.
+add seatd default
+add xdg-runtime-dirs boot
+
+# tinydm only "want"s dbus and elogind, so nothing pulls in a system bus or
+# orders it after seatd. Without seatd already running, sway loses the race for
+# the seat and the session dies.
+add dbus default
+
+add devfs sysinit
+add dmesg sysinit
+add cgroups sysinit
+
+add fsck boot
+add root boot
+add localmount boot
+add bootmisc boot
+add hostname boot
+add loopback boot
+add networking boot
+add seedrng boot
+add sysctl boot
+add syslog boot
+# Persist kernel messages to /var/log/messages. Without klogd, dmesg is
+# lost on reboot, which on a headless board means wifi/firmware failures
+# leave no evidence behind.
+add klogd boot
+# Load the modules from /usr/lib/modules-load.d (devicepkg-dev installs
+# modules-load.conf there)
+add modules boot
+# The Pi has no RTC, so restore an approximate time from the last shutdown
+add swclock boot
+
+add crond default
+add sshd default
+# No RTC on this board: swclock restores an approximate time at boot,
+# chronyd corrects it once the network is up
+add chronyd default
+
+# Headless Wi-Fi: wifi-boot-config picks up a wpa_supplicant.conf that was
+# dropped onto the FAT boot partition, wpa_supplicant associates and dhcpcd
+# gets the lease. dhcpcd is used rather than an "auto wlan0" stanza because
+# brcmfmac binds over SDIO after the networking service has already run.
+add wifi-boot-config boot
+add wpa_supplicant boot
+add dhcpcd boot
+# Dump a diagnostic report to the FAT boot partition, readable from any
+# computer. This is the only way to debug a headless board whose network
+# did not come up.
+add boot-diag default
+# The BCM43438 is attached by the kernel (hci_uart + btbcm; the DTB enables the
+# bluetooth node), so no hciattach helper is needed.
+add bluetooth default
+
+# Announce the hostname over mDNS. Without this, a headless board can only be
+# found by digging through the router's DHCP table.
+add avahi-daemon default
+
+# No reset button on this board, so a hung kernel otherwise means pulling power
+add watchdog default
+
+# /etc/conf.d/watchdog belongs to busybox-openrc, so it cannot be shipped from
+# this package without a file conflict - edit it in place instead.
+#
+# busybox's init script returns 1 from start_pre when WATCHDOG_DEV is unset,
+# which it is by default, so the service failed on every boot and the
+# protection the line above intends never existed.
+#
+# Both values are set on purpose, not just the device. bcm2835_wdt can only
+# count to ~16 s (its PM_WDOG_TIME_SET field is 20 bits of 1/65536 s), and it
+# advertises that as max_hw_heartbeat_ms rather than max_timeout. So busybox's
+# default -T 60 is not rejected and not clamped: the kernel accepts 60 s and
+# quietly feeds the hardware from its own timer to fake the longer timeout.
+# That means the kernel keeps petting the dog after the userspace daemon is
+# gone, and a wedge is only noticed a minute later. -T 14 stays inside what
+# the hardware can actually count, so busybox's 4 s keepalive is the only
+# thing holding the board up - which is the whole point on a board with no
+# reset button. Do not raise -T past 15.
+_wdconf=/etc/conf.d/watchdog
+[ -e "$_wdconf" ] || : > "$_wdconf"
+_set_wd() {
+	if grep -q "^$1=" "$_wdconf"; then
+		sed -i "s|^$1=.*|$1=$2|" "$_wdconf"
+	else
+		echo "$1=$2" >> "$_wdconf"
+	fi
+}
+_set_wd WATCHDOG_DEV /dev/watchdog
+_set_wd WATCHDOG_OPTS '"-T 14 -t 4"'
+
+# One-shot: grow the rootfs onto the rest of the SD card, then remove itself.
+add grow-rootfs boot
+
+add killprocs shutdown
+add mount-ro shutdown
+add savecache shutdown

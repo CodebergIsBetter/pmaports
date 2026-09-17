@@ -1,0 +1,6 @@
+# wlan0 is deliberately not listed here: it is managed by wpa_supplicant (for
+# the association) and dhcpcd (for the lease). That combination copes with the
+# interface appearing late, which it does on this device because brcmfmac is
+# loaded from the SDIO bus after udev settles.
+auto lo
+iface lo inet loopback

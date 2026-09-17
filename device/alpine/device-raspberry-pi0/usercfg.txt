@@ -1,0 +1,74 @@
+# dtparam= applies to the most recently named dtoverlay=, NOT to the base
+# device tree. So every dtparam for the base DTB has to come BEFORE the first
+# dtoverlay line, otherwise the firmware logs "Unknown dtparam ... - ignored"
+# into the VideoCore log where nobody will ever see it.
+
+# Uncomment some or all of these to enable the optional hardware interfaces
+#dtparam=i2c_arm=on
+#dtparam=i2s=on
+#dtparam=spi=on
+
+# Enable the VideoCore IV GPU through the full KMS driver. This binds the
+# BCM2835 display pipeline *and* the V3D 2.1 3D core to the in-kernel vc4
+# driver, which is what Mesa's vc4 Gallium driver (mesa-dri-gallium) renders
+# through. Do not use vc4-fkms-v3d, it is deprecated.
+#
+# half of the Zero W's RAM.
+#
+# Note: do NOT set gpu_mem=16 here. That selects the cut-down firmware
+# (start_cd.elf), which ships in the separate raspberrypi-bootloader-cutdown
+# package and is not installed, so the board would not boot.
+# cma-64 pins the CMA reservation at 64 MiB. Note this is what the base
+# bcm2708-rpi-zero-w.dtb already sets (/reserved-memory/linux,cma:size =
+# 0x04000000), so naming it here documents the value rather than changing it.
+# Raise it to cma-128 if a compositor runs out of buffers at 1080p: every vc4
+# GEM buffer object comes out of this pool, and a 1920x1080 scanout swapchain
+# plus the fixed 16 MB binner is already ~41 MB of the 64.
+dtoverlay=vc4-kms-v3d,cma-64
+
+# Let the kernel pick the video mode from EDID instead of having the firmware
+# hand over a fixed framebuffer.
+disable_fw_kms_setup=1
+
+# load dwc2 USB driver (USB gadget mode on the OTG port)
+dtoverlay=dwc2
+
+# Serial on the 40-pin header. Without this the firmware passes
+# 8250.nr_uarts=0 and there is no /dev/ttyS0 at all.
+# NOTE: This fixes the core_freq to 250MHz.
+enable_uart=1
+
+# There are two UARTs and three ways to share them. The kernel binds the PL011
+# to the Bluetooth chip by default, so as shipped:
+#
+#   Bluetooth : PL011      (works)
+#   header    : mini-UART  -> /dev/ttyS0
+#
+# That already gives you both. Use "tio /dev/ttyS0" rather than ttyAMA0.
+#
+# If you want the PL011 on the header instead (its baud rate does not depend
+# on core_freq, so it is the better choice for a serial cable), uncomment ONE
+# of these and reboot:
+#
+#   miniuart-bt : swaps them. Bluetooth moves to the mini-UART and the header
+#                 gets the PL011 as /dev/ttyAMA0. Both still work.
+#dtoverlay=miniuart-bt
+#
+#   disable-bt  : turns Bluetooth off entirely and gives the header the PL011
+#                 as /dev/ttyAMA0.
+#dtoverlay=disable-bt
+
+# A camera needs a sensor-specific overlay, so it is off by default. Either
+# uncomment this (the firmware probes the connected module), or name the sensor
+# directly with e.g. dtoverlay=ov5647 / imx219 / imx477. Then install the
+# userspace: apk add libcamera libcamera-raspberrypi libcamera-tools v4l-utils
+# The Zero W has the narrow 22-pin CSI connector, so it needs the Zero adapter
+# flex, not the 15-pin cable that comes with most camera modules.
+#camera_auto_detect=1
+
+# Under full KMS the display pipeline and the V3D allocate from the CMA region
+# above, not from the firmware's VideoCore carve-out, so the default 64 MB
+# split mostly sits idle on a 512 MB board. 32 MB still uses the normal
+# start.elf (16 MB would force the cut-down firmware), and hands ~32 MB back
+# to Linux. Check with "vcgencmd get_mem arm" and "vcgencmd get_mem gpu".
+gpu_mem=32

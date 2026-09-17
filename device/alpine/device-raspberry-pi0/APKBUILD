@@ -1,0 +1,220 @@
+# Reference: <https://postmarketos.org/devicepkg>
+maintainer="Rudraksha Gupta <rudraksha.gupta@nokia.com>"
+pkgname=device-raspberry-pi0
+pkgdesc="Raspberry Pi Zero W"
+pkgver=1
+pkgrel=0
+url="https://postmarketos.org"
+license="MIT"
+arch="armhf"
+# !pmb:crossdirect: this package contains no compiled code, and there is no
+# gcc-armhf cross compiler anymore, so build it inside a qemu armhf chroot.
+options="!check !archcheck !pmb:crossdirect"
+# This device is installed with deviceinfo_alpine_only, so every runtime
+# dependency must come from Alpine's repositories and none from postmarketOS.
+# No mesa here on purpose. The GPU userspace is only useful to a compositor,
+# and depending on it from the base package puts the whole gallium/LLVM stack
+# into the headless image, which never composites anything. pmbootstrap adds
+# it to the Wayland UI package list instead, so it follows the session rather
+# than the board. An install_if on libgbm would look tidier but cannot work:
+# there is no package of that name (mesa-gbm merely provides so:libgbm.so.1)
+# and nothing in the sway or labwc dependency chain names it directly, so the
+# trigger could silently never fire and leave a UI image with no DRI driver.
+#
+# Keep every comment OUTSIDE the depends string below. Inside double quotes a
+# "#" is not a comment: abuild loops over $depends word by word, so each word
+# of the comment becomes a dependency - and a quoted phrase inside the comment
+# ends the assignment early, which makes the APKBUILD unsourceable and abuild
+# die before it builds anything.
+#
+# dosfstools: /boot is fstab passno 2, so OpenRC checks it on every boot. With
+# no fsck.vfat installed that check fails and is then followed by a bogus
+# "Filesystems repaired", which makes a real ext4 repair indistinguishable
+# from standing noise - and the FAT partition holding the bootloader, kernel,
+# initramfs and the wpa_supplicant recovery file could not be repaired on the
+# device at all.
+#
+# sfdisk and partx: grow-rootfs enlarges the root partition on first boot, and
+# partx is what makes the running kernel notice the new size. partx is its own
+# Alpine subpackage; it is not part of util-linux-misc. Do not use
+# util-linux-misc here as a way to get it: it would also drop real
+# util-linux binaries over busybox's /sbin/fsck, /sbin/hwclock, /sbin/mkswap,
+# /usr/sbin/rfkill and /bin/more applet links, which changes the boot path
+# (OpenRC's fsck service) for no reason.
+depends="
+	alpine-base
+	alsa-utils
+	avahi
+	bluez
+	chrony
+	dhcpcd
+	doas
+	dosfstools
+	e2fsprogs-extra
+	eudev
+	iw
+	libgpiod
+	linux-firmware-brcm
+	linux-rpi
+	mkinitfs
+	openssh
+	partx
+	raspberrypi-bootloader
+	seatd
+	sfdisk
+	tzdata
+	udev-init-scripts
+	wireless-regdb
+	wpa_supplicant
+	"
+makedepends="devicepkg-dev"
+subpackages="
+	$pkgname-openrc
+	$pkgname-sway:sway
+	$pkgname-xorg:xorg
+	$pkgname-xfce4:xfce4
+	$pkgname-udev
+	"
+source="
+	deviceinfo
+	config.txt
+	usercfg.txt
+	kernel-cmdline.conf
+	modules-load.conf
+	95-vchiq-permissions.rules
+	doas.conf
+	interfaces
+	wpa_supplicant.conf
+	wifi-boot-config.openrc
+	boot-diag.openrc
+	grow-rootfs.openrc
+	xdg-runtime-dir.sh
+	xorg-vc4.conf
+	sway-config
+	tinydm-env-wayland.sh
+	xdg-runtime-dirs.openrc
+	xfce4-desktop.xml
+	xfce4-power-manager.xml
+	10-alpinepi-shutdown.rules
+	90-wlan.rules
+	"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+
+	install -Dm644 "$srcdir"/config.txt "$pkgdir"/boot/config.txt
+	install -Dm644 "$srcdir"/usercfg.txt "$pkgdir"/boot/usercfg.txt
+
+	# Wi-Fi: wpa_supplicant associates, dhcpcd leases. The credentials are
+	# written by "pmbootstrap install --wifi-ssid", or dropped onto the FAT
+	# boot partition as /boot/wpa_supplicant.conf.
+	install -Dm644 "$srcdir"/xdg-runtime-dir.sh \
+		"$pkgdir"/etc/profile.d/99-xdg-runtime-dir.sh
+
+	install -Dm644 "$srcdir"/doas.conf "$pkgdir"/etc/doas.d/10-wheel.conf
+
+	install -Dm644 "$srcdir"/interfaces "$pkgdir"/etc/network/interfaces
+	install -Dm600 "$srcdir"/wpa_supplicant.conf \
+		"$pkgdir"/etc/wpa_supplicant/wpa_supplicant.conf
+	install -Dm755 "$srcdir"/wifi-boot-config.openrc \
+		"$pkgdir"/etc/init.d/wifi-boot-config
+	install -Dm755 "$srcdir"/boot-diag.openrc "$pkgdir"/etc/init.d/boot-diag
+	install -Dm755 "$srcdir"/grow-rootfs.openrc "$pkgdir"/etc/init.d/grow-rootfs
+
+	install -Dm644 "$srcdir"/xorg-vc4.conf \
+		"$pkgdir"/etc/X11/xorg.conf.d/20-vc4.conf
+
+	install -Dm644 "$srcdir"/sway-config "$pkgdir"/etc/sway/config.d/10-$pkgname.conf
+	install -Dm644 "$srcdir"/tinydm-env-wayland.sh \
+		"$pkgdir"/etc/tinydm.d/env-wayland.d/10-$pkgname.sh
+	install -Dm755 "$srcdir"/xdg-runtime-dirs.openrc \
+		"$pkgdir"/etc/init.d/xdg-runtime-dirs
+
+	install -Dm644 "$srcdir"/95-vchiq-permissions.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/95-vchiq-permissions.rules
+	install -Dm644 "$srcdir"/90-wlan.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/90-wlan.rules
+
+	install -Dm644 "$srcdir"/xfce4-desktop.xml \
+		"$pkgdir"/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
+	install -Dm644 "$srcdir"/xfce4-power-manager.xml \
+		"$pkgdir"/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml
+	install -Dm644 "$srcdir"/10-alpinepi-shutdown.rules \
+		"$pkgdir"/usr/share/polkit-1/rules.d/10-alpinepi-shutdown.rules
+}
+
+openrc() {
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	install="$subpkgname.post-install $subpkgname.post-upgrade"
+	depends="openrc"
+
+	amove etc/init.d/wifi-boot-config
+	amove etc/init.d/boot-diag
+	amove etc/init.d/grow-rootfs
+	amove etc/init.d/xdg-runtime-dirs
+}
+
+xfce4() {
+	pkgdesc="$pkgdesc (Xfce session configuration)"
+	install_if="$pkgname=$pkgver-r$pkgrel xfdesktop"
+	install="$subpkgname.post-install"
+	# udisks2 and gvfs: without them Thunar cannot enumerate or mount the SD
+	# card or a USB stick, and thunar-volman does nothing.
+	depends="
+		gvfs
+		polkit
+		udisks2
+		"
+
+	amove etc/xdg/xfce4
+	amove usr/share/polkit-1
+}
+
+xorg() {
+	pkgdesc="$pkgdesc (Xorg configuration)"
+	install_if="$pkgname=$pkgver-r$pkgrel xorg-server"
+
+	amove etc/X11
+}
+
+sway() {
+	pkgdesc="$pkgdesc (sway session)"
+	install_if="$pkgname=$pkgver-r$pkgrel sway"
+	install="$subpkgname.post-install"
+	# A bare "apk add sway" gives you a compositor and nothing to run in it
+	depends="
+		font-dejavu
+		foot
+		wmenu
+		"
+
+	amove etc/sway
+}
+
+sha512sums="
+93b2ff5c2d885ecedc02745e4c3d055d5499b713aa523e97e665f8b8b03fd94bd23391ab80a413084c86aa722c679fac207b76ca14801de3fa3b0fe17c8cb7c9  deviceinfo
+514f5153b490110a705626616e73b41a8caee4bb9b7b330965ba8060711dc2b261f94f8f2edff3f63d0edfc3f642c85c0c7174de4185ad02ea5e17aa7f1c9d48  config.txt
+5db7f5e182d4a0309b12ae61040e7b6dc5254a3d58b2d2d7abb6676978cfa3c347b9caeae3800f046b744b68bc6590d1d8967ba547a292dcd456ace49bd42557  usercfg.txt
+a2aaf8bcd162084b41c6df3c67c99110c94d203a5824b17b0b0a8b3e226c17def074580ab3066ca9292b69a94ed37cefea01f49d32cbe67f102ebbe63a01398b  kernel-cmdline.conf
+a831a2f0cf5b56098e17826463cd979f6b9b422bac1bc2fc96ac5f4f46ca045745db86fe1cf1d74f1930c04043c60f6dbe4843db7cacf3e559200aee0fada08b  modules-load.conf
+7e5505cb07d5b4a81bd28443d508336b5c547356538f1c06f91ed93ad0d7d456d4f74f1d24df5a2e08c17e74f0a66607352ac4874e967e9a91dfec9522d2d58d  95-vchiq-permissions.rules
+48196a0b8c7d202d6ef65fa82917cadb789823c257b7ac75bfc48219ae1ed203b99e66a2f83ab64902efe40444941441fbe0944b8d495d98520723ea88d1bfb6  doas.conf
+a025412f04c543aac865f91cff13585c3e2466eed220a572d5fe09151a8649b55adbf3f5594099a960a43f3b95cffe767b9a6110278131469c7398530e7d8fd9  interfaces
+c5c8068e2d8636ddde1b919eefd572a54f5572a75dedeea073b2a728119696dc93f616f4fb33c84dff1dfadb7073161ea39c3707ac5c4e838322216186077a22  wpa_supplicant.conf
+70ddb62381f7cb9f243d747e1403b89af8b813c959e8567d4c666dbc01cc771c9f57d703ab630d9fe711d3c2cf35962067db1dc1712d03972bd60a5d53936e3e  wifi-boot-config.openrc
+d579902fc69158e702515afa6c002fe0fbde774312a3cefd7a3d59e7329c6a6d455a3a4e4dc5fed97d009f36d6b3fbde189f1fba504220f162621a9dd8ae6382  boot-diag.openrc
+a596468b1a553ea24a367355ac25bb888dcd11765427dd78054b1441154bda3541caabd6478674d999a5e7aa1cb93b0decae6b301a46f6add9b5401841f6c48e  grow-rootfs.openrc
+9dd2fd700ddf4418faa4afd10bd71d78bdf658248e0e7f5fcbc76aecd7cd255054630b97ce61dca331420f7d82234d8102cb9a1cdc0351a66f91c3e14e3d98f2  xdg-runtime-dir.sh
+ec6f80128b1baab92226939e8415757dba90801d3df8acded0a95c851d966eff908d229dd4963674ed37ed92a7311299dd7e19fa3b70ff45354edf95b727a2b0  xorg-vc4.conf
+7ef6c0cdd4b320a496e8e45dbad6861dbfa11e758021f6f7db3ed96edff35356c63df2c379e1b835ca43b4ae3a49c0ebaf3b66b90d9d5334eb7e3aff04454581  sway-config
+9d055618532125e5417c49431f5fdf33dd2ab6ff6b3c62a155e1ca7566177297756c38f45de4da2e2eb07cef0911c2921f4c4500447bd720e256ccfb03dd124d  tinydm-env-wayland.sh
+57f04a056342b6194ecdd16bb4cc5c543f8312e22ca3bf0015e73e683fe9bfceb8824f962469e455112eec4e1121668e766d4c5e59b2f3bc2ad5de2a3724ee65  xdg-runtime-dirs.openrc
+5fa1d7a1222220ce7c7f15a91d653aa350bac0a41b146e4bd2dae3d0383ec1d295c23a8e07e89bfee2b73c66f3c1c8f20613a352643b97dae57d8a3818cfd114  xfce4-desktop.xml
+23cd7b374a52284bef026296f8af678d53bc725dc84d09c289ebd6ac3a24ccab4138230e9458c7ab156d62341c980a96f7543c30c7eb354f8a2cade70a4e4a38  xfce4-power-manager.xml
+24becb57983053ed3385c23820562ddaea62186c6ab2f6e55f7bbac5d53f02e24ef323ee7ad52f5ca704251de8c6a35c4c4e7d93165a364f6a73d7699b11cb86  10-alpinepi-shutdown.rules
+b90284c59a4aa170bb0d569f43d17b9277e39dc63c4c6db160ccc64dd73143386f020b4f67dd42d1f5cb2762a116a2e16d0f61fc53f187b42d1fdd14a8195060  90-wlan.rules
+"

@@ -145,6 +145,29 @@ Requirements:
 * Port and dependencies build
 * The device boots
 
+(device-category-alpine)=
+### Alpine
+
+Device ports that set `deviceinfo_alpine_only` and therefore install Alpine
+Linux only, with no postmarketOS packages at all. This exists for devices whose
+architecture postmarketOS does not build packages for; at the time of writing
+that means ARMv6 (`armhf`), i.e. the Raspberry Pi Zero / Zero W and the
+original Raspberry Pi.
+
+These ports are not comparable to the categories above, because almost nothing
+postmarketOS provides applies to them: no `postmarketos-base`, no
+`postmarketos-ui-*`, no postmarketOS binary repository and no postmarketOS
+signing key. The selected UI is a plain Alpine package name rather than a
+`postmarketos-ui-*` meta package.
+
+Requirements:
+
+* `deviceinfo_alpine_only="true"`
+* Every entry in `depends` is an Alpine package, and `postmarketos-base` is not
+  among them (both are enforced by `.ci/testcases/test_device.py`)
+* Port and dependencies build
+* The device boots
+
 (device-category-archived)=
 ### Archived
 

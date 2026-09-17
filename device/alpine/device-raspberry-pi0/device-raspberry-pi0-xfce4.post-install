@@ -1,0 +1,9 @@
+#!/bin/sh
+# polkitd is what the Xfce logout dialog talks to in order to power the machine
+# off or reboot it. Alpine's polkit package ships the service but does not
+# enable it, and postmarketos-base-ui - which would have - is absent here. With
+# no authority running, pkexec cannot reach one and the Shut Down and Restart
+# buttons fail, so the only clean poweroff is "doas poweroff" in a terminal.
+rc-update add polkit default 2>/dev/null || true
+
+exit 0

@@ -2,19 +2,24 @@
 # Please use double quotes only. You can source this file in shell scripts.
 
 deviceinfo_format_version="0"
-deviceinfo_name="Raspberry Pi Zero"
+deviceinfo_name="Raspberry Pi Zero W"
 deviceinfo_manufacturer="Raspberry Pi"
 deviceinfo_codename="raspberry-pi0"
-deviceinfo_year="2015"
+deviceinfo_year="2017"
 deviceinfo_arch="armhf"
 deviceinfo_partition_type="msdos"
 deviceinfo_generate_cmdline_txt="true"
+
+# This device is ARMv6 (BCM2835). postmarketOS does not build armhf packages
+# anymore, so the whole system comes from Alpine Linux instead.
+deviceinfo_alpine_only="true"
 
 # Device related
 deviceinfo_chassis="embedded"
 deviceinfo_external_storage="true"
 deviceinfo_screen_width="1920"
 deviceinfo_screen_height="1080"
+# VideoCore IV / V3D 2.1, driven by the vc4 DRM driver (see usercfg.txt)
 deviceinfo_drm="true"
 
 # Bootloader related

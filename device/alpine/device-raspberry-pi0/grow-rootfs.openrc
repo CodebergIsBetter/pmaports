@@ -1,0 +1,85 @@
+#!/sbin/openrc-run
+
+description="Grow the root partition and filesystem to fill the SD card, once"
+
+# The image is ~2.1-2.4 GB. Flashed onto the 16 or 32 GB card somebody
+# actually owns, the partition and the filesystem stay that size and the rest
+# of the card is unallocated and unusable. postmarketos-initramfs used to do
+# this resize; dropping it for Alpine's mkinitfs silently took the feature
+# away, and the symptom is ENOSPC on a card with 30 GB free.
+#
+# This runs once and then removes itself from every runlevel, the same pattern
+# openrc's own firstboot services use. It is deliberately timid: anything it
+# does not recognise makes it give up rather than guess, because the one thing
+# worse than a small filesystem is an unbootable one.
+
+depend() {
+	need localmount
+	before bootmisc
+}
+
+disable_self() {
+	rm -f /etc/runlevels/*/"$RC_SVCNAME"
+}
+
+start() {
+	# Only ever touch the disk this system actually booted from, identified
+	# through the mounted root rather than a hardcoded device name.
+	root_src=$(awk '$2 == "/" { print $1; exit }' /proc/mounts)
+	case "$root_src" in
+	/dev/mmcblk[0-9]p[0-9]) ;;
+	*)
+		einfo "root is $root_src, not an SD card partition; nothing to grow"
+		disable_self
+		return 0
+		;;
+	esac
+
+	disk=${root_src%p[0-9]}
+	partnum=${root_src##*p}
+	[ -b "$disk" ] || { ewarn "no block device $disk"; disable_self; return 0; }
+
+	# Compare the partition's last sector with the disk's last usable sector.
+	# Growing by less than 64 MiB is not worth a partition table rewrite.
+	disk_sectors=$(cat "/sys/class/block/${disk#/dev/}/size" 2>/dev/null) || disk_sectors=0
+	part_start=$(cat "/sys/class/block/${root_src#/dev/}/start" 2>/dev/null) || part_start=0
+	part_sectors=$(cat "/sys/class/block/${root_src#/dev/}/size" 2>/dev/null) || part_sectors=0
+	if [ "$disk_sectors" -le 0 ] || [ "$part_sectors" -le 0 ]; then
+		ewarn "cannot read partition geometry; leaving the card alone"
+		disable_self
+		return 0
+	fi
+	slack=$((disk_sectors - part_start - part_sectors))
+	if [ "$slack" -lt 131072 ]; then
+		einfo "less than 64 MiB spare on $disk; already the right size"
+		disable_self
+		return 0
+	fi
+
+	ebegin "Growing $root_src by $((slack / 2048)) MiB"
+
+	# ",+" means "same start, extend to the end of the free space". --force is
+	# needed because sfdisk refuses to rewrite the table of a disk with a
+	# mounted partition without it; the start sector is unchanged, so the data
+	# is not moved.
+	if ! echo ',+' | sfdisk -N "$partnum" --force "$disk" >/dev/null 2>&1; then
+		eend 1 "sfdisk failed; filesystem left untouched"
+		disable_self
+		return 0
+	fi
+
+	# The kernel will not notice the new size of an in-use partition on its
+	# own, and it cannot re-read the whole table while root is mounted.
+	# partx updates the single partition we changed.
+	partx -u "$disk" >/dev/null 2>&1 || ewarn "partx could not refresh $disk"
+
+	# ext4 can grow while mounted read-write.
+	if resize2fs "$root_src" >/dev/null 2>&1; then
+		eend 0
+	else
+		eend 1 "resize2fs failed; a reboot then 'resize2fs $root_src' should finish it"
+	fi
+
+	disable_self
+	return 0
+}

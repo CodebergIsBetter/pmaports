@@ -1,0 +1,19 @@
+// Xfce's logout dialog calls into polkit to power off or reboot. There is no
+// elogind or ConsoleKit in this image, so the autologin session is never
+// registered as "active" and any rule written against allow_active can never
+// match - the Shut Down and Restart buttons fail or grey out, and the only
+// clean poweroff is "doas poweroff" in a terminal. On an SD-card board a user
+// who does not know that pulls the power instead, which is how the rootfs gets
+// corrupted.
+//
+// Grant the wheel group the shutdown and reboot actions unconditionally, which
+// is the same trust level doas already gives them. allow_any is deliberate:
+// allow_active would be dead code here for the reason above.
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("wheel") &&
+        (action.id == "org.freedesktop.login1.power-off" ||
+         action.id == "org.freedesktop.login1.reboot" ||
+         action.id == "org.xfce.session.xfsm-shutdown-helper")) {
+        return polkit.Result.YES;
+    }
+});

@@ -1,0 +1,11 @@
+# Raspberry Pi Zero W additions, included by /etc/sway/config after its own
+# settings. Keep this minimal: Alpine's stock sway config is already correct
+# for this board, including the wallpaper and the status bar.
+
+# PipeWire's OpenRC service is a *user* service (/etc/user/init.d/pipewire),
+# which needs per-session plumbing that this image does not set up, so nothing
+# would start the audio stack otherwise. Drop these three lines if you enable
+# the user services instead.
+exec pipewire
+exec wireplumber
+exec pipewire-pulse

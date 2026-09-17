@@ -150,6 +150,11 @@ description = "Defines if the device's kernel supports the Direct Rendering Mana
 datatype = "boolean"
 default_value = false
 
+[variable.metadata.alpine_only]
+description = "Install this device using Alpine Linux only. `pmbootstrap` will not add the postmarketOS binary repository or its signing key to the rootfs, will not install any postmarketOS package (postmarketos-base, postmarketos-mkinitfs, the UI meta packages, ...), uses Alpine's `mkinitfs` to generate the initramfs and generates `/boot/cmdline.txt` itself instead of relying on boot-deploy. OpenRC is forced as the service manager. This exists for devices whose architecture postmarketOS does not build packages for, such as the ARMv6 Raspberry Pi Zero / Zero W (armhf)."
+datatype = "boolean"
+default_value = false
+
 [variable.metadata.super_partitions]
 description = "For Androids with dynamic partitions, set the super partition(s) here."
 

@@ -1,0 +1,52 @@
+#!/sbin/openrc-run
+
+description="Install /boot/wpa_supplicant.conf, so Wi-Fi can be fixed headlessly"
+
+# The FAT boot partition is readable from any computer, so dropping a
+# wpa_supplicant.conf onto it is the only way to change the Wi-Fi network of a
+# headless device without a serial cable or a rebuild. Same idea as the
+# Raspberry Pi OS boot partition.
+src="/boot/wpa_supplicant.conf"
+dst="/etc/wpa_supplicant/wpa_supplicant.conf"
+
+depend() {
+	need localmount
+	before wpa_supplicant
+	# Without this the ordering against modules/udev is alphabetical luck.
+	# The wait loop below is pointless if it runs before the SDIO bus has
+	# even been walked.
+	after modules udev-settle
+}
+
+start() {
+	# brcmfmac binds over SDIO and pulls ~450 KB of firmware, which is slow on
+	# this board. wpa_supplicant's init script probes for a wireless interface
+	# exactly once in start_pre() and gives up if there is none, so make sure
+	# the interface exists before it gets that far.
+	i=0
+	while [ "$i" -lt 100 ]; do
+		set -- /sys/class/net/*/phy80211
+		[ -e "$1" ] && break
+		sleep 0.1
+		i=$((i + 1))
+	done
+	if [ ! -e "$1" ]; then
+		# Say so loudly: this is the failure that leaves a headless board
+		# offline, and on this device the console output nobody reads goes
+		# to the HDMI VT. syslog reaches /var/log/messages via klogd, and
+		# boot-diag copies evidence to the FAT partition.
+		eerror "No wireless interface after 10s; relying on the udev rule to"
+		eerror "start wpa_supplicant when wlan0 appears."
+		logger -t wifi-boot-config "no wireless interface after 10s"
+	fi
+
+	[ -f "$src" ] || return 0
+
+	if cmp -s "$src" "$dst"; then
+		return 0
+	fi
+
+	ebegin "Installing $src"
+	install -Dm600 "$src" "$dst"
+	eend $?
+}

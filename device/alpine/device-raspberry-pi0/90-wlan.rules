@@ -1,0 +1,17 @@
+# Wi-Fi on this board is the only administration path when it is headless, and
+# two things go wrong without help.
+#
+# 1. brcmfmac binds over SDIO and pulls ~450 KB of firmware, so wlan0 can
+#    appear after wpa_supplicant's init script has already probed for a
+#    wireless interface and given up. wifi-boot-config waits up to 10 s for
+#    the interface, but a cold card or a probe retry can outlast that and
+#    nothing else ever tries again - the board is then offline until someone
+#    power-cycles it, and only recovers if it wins the race next time. Start
+#    the supplicant from the interface's own add event so late is still fine.
+#
+# 2. brcmfmac enables Wi-Fi power save by default and the Zero W drops its
+#    association under it, which looks like "ssh works for a few seconds then
+#    the host becomes unreachable". Turn it off as soon as the interface
+#    exists rather than from a service that may run before it appears.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/sbin/iw dev %k set power_save off"
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/sbin/rc-service --ifexists --ifstopped wpa_supplicant start"

@@ -14,12 +14,20 @@ gitlab_groups = [
 ]
 
 
-def device_dependency_check(apkbuild, path):
+def is_alpine_only(device):
+    """:returns: True if the device is installed with Alpine packages only"""
+    return bool(getattr(pmb.parse.deviceinfo(device), "alpine_only", False))
+
+
+def device_dependency_check(apkbuild, path, alpine_only):
     """Raise an error if a device package has a dependency that is not allowed
     (e.g. because it should be in a subpackage instead)."""
 
     for depend in apkbuild["depends"]:
-        if depend == "mesa-dri-gallium":
+        # Usually postmarketos-base pulls mesa-dri-gallium in via install_if,
+        # but alpine_only devices don't install postmarketos-base at all, so
+        # they must depend on it directly.
+        if depend == "mesa-dri-gallium" and not alpine_only:
             raise RuntimeError(
                 f"{path}: mesa-dri-gallium shouldn't be in"
                 " depends anymore (see pmaports!3478)"
@@ -32,22 +40,28 @@ def test_aports_device():
     """
     for path in pkgrepo_iglob("device/*/device-*/APKBUILD"):
         apkbuild = pmb.parse.apkbuild(path)
+        device = apkbuild["pkgname"][len("device-") :]
+        deviceinfo = pmb.parse.deviceinfo(device)
+        alpine_only = is_alpine_only(device)
 
-        # Depends: Require "postmarketos-base"
+        # Depends: Require "postmarketos-base", unless the device is installed
+        # from Alpine's repositories only (deviceinfo_alpine_only)
         depend_flag = False
         for dependency in apkbuild["depends"]:
             if "postmarketos-base" == dependency or "postmarketos-base>" in dependency:
                 depend_flag = True
-        if not depend_flag:
+        if not depend_flag and not alpine_only:
             raise RuntimeError(f"Missing 'postmarketos-base' in depends of {path}")
+        if depend_flag and alpine_only:
+            raise RuntimeError(
+                f"{path}: deviceinfo_alpine_only is set, so 'postmarketos-base'"
+                " must not be in depends"
+            )
 
         # Depends: Must not have specific packages
-        for depend in apkbuild["depends"]:
-            device_dependency_check(apkbuild, path)
+        device_dependency_check(apkbuild, path, alpine_only)
 
         # Architecture
-        device = apkbuild["pkgname"][len("device-") :]
-        deviceinfo = pmb.parse.deviceinfo(device)
         if Arch.from_str("".join(apkbuild["arch"])) != deviceinfo.arch:
             raise RuntimeError(
                 f'wrong architecture, please change to arch="{deviceinfo.arch}": {path}'

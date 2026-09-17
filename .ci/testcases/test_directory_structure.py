@@ -5,6 +5,7 @@ import stat
 
 expected_directories = [
     "cross",
+    "device/alpine",
     "device/archived",
     "device/community",
     "device/downstream",

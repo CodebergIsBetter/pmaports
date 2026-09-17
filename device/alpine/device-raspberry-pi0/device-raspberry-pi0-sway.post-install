@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# Nothing to do: pmbootstrap wires up tinydm, seatd and the user's groups for
+# whichever UI was selected. This subpackage only ships sway's configuration.
+exit 0

@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+
+description="Create /run/user/<uid> for local users"
+
+# elogind would normally do this on login. sway only needs a private writable
+# directory for its wayland socket, so creating it at boot is enough and avoids
+# pulling in elogind and dbus on a 512 MB device.
+
+depend() {
+	need localmount
+	after bootmisc
+}
+
+start() {
+	ebegin "Creating XDG runtime directories"
+	awk -F: '$3 >= 1000 && $3 < 65534 { print $3, $4 }' /etc/passwd |
+	while read -r uid gid; do
+		install -d -m 0700 -o "$uid" -g "$gid" "/run/user/$uid" || return 1
+	done
+	eend $?
+}
